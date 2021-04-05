@@ -105,7 +105,6 @@ if __name__ == "__main__":
     books = get_books(book_links)
     print("Books details fetched...")
     db_books_list = get_books_db()
-
     new_books = find_new_books(db_books_list)
     new_books.extend(db_books_list['books'])
     
