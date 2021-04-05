@@ -1,10 +1,16 @@
-from bs4 import BeautifulSoup
-from urllib.request import Request, urlopen
 import re
 import json
 import numpy as np
 import uuid
 import collections
+import logging
+from bs4 import BeautifulSoup
+from urllib.request import Request, urlopen
+from github import Github
+from datetime import datetime
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 req = Request("https://freetamilebooks.com/page/1")
 book_page = "https://freetamilebooks.com/ebooks/"
@@ -34,7 +40,7 @@ def get_book_links():
 
 
 def get_books(book_links):
-    print("Fetching book details...")
+    logger.info("Fetching book details...")
     books = []
     for book_link in book_links:
         page = urlopen(book_link)
@@ -45,11 +51,13 @@ def get_books(book_links):
         p_tags = content.find_all('p')
         # scraping title
         title = re.sub(title_pattern, '', p_tags[0].text)
-        print("Book Title : ", title)
+        logger.info("Book Title : %s", title)
 
         epub_tag = content.find("a", {"class": "aligncenter download-button"})
         epub_url = epub_tag.get('href')
-        print("EPUB URL : ", epub_url)
+        if "http://" in epub_url:
+            epub_url = epub_url.replace("http://", "https://")
+        logger.info("EPUB URL : %s", epub_url)
 
         image_url = ""
         img_tag = content.find('a').find('img')
@@ -59,7 +67,7 @@ def get_books(book_links):
             image_url = img_tag.get('data-src')
         else:
             image_url = content.find('a').find('href')
-        print("Image URL : ", image_url)
+        logger.info("Image URL : %s", image_url)
 
         # scraping category and author from meta tag
         meta_tag = content.find("div", {"class": "entry-meta"})
@@ -67,10 +75,10 @@ def get_books(book_links):
         category = genres_tag.find('a').text
         authors_tag = meta_tag.find("span", {"class": "authors"})
         author = authors_tag.find('a').text
-        print("Book Author : ", author)
+        logger.info("Book Author : %s", author)
 
         # generating book_id
-        print("Generating UUID...")
+        logger.info("Generating UUID...")
         bookid = str(uuid.uuid4())
 
         books.append({'title': title, 'bookid': bookid, 'author': author,
@@ -84,7 +92,8 @@ def get_books_db():
     json_data = json.loads(data)
     return json_data
 
-def find_new_books(db_books): 
+
+def find_new_books(db_books):
     new_books = []
     for book in books:
         is_book_exist = False
@@ -94,21 +103,35 @@ def find_new_books(db_books):
                 break
         if False == is_book_exist:
             new_books.append(book)
-            print('Match Not Found --- ', book['title'])
+            logger.info('Match Not Found --- %s', book['title'])
     return new_books
 
 
+def update_github(data: dict, path_: str):
+    repo = Github(login_or_token=os.environ['ACCESS_TOKEN']).get_repo(
+        os.environ['REPO_URL'])
+    json_file = repo.get_contents(path_)
+    logger.info(json_file)
+    now: str = datetime.now().isoformat(" ", "seconds")
+    commit_message = f"update {json_file.name} @ {now}"
+    repo.update_file(json_file.path, commit_message, data, json_file.sha)
+    logger.info("updated %s @ %s", json_file.name, now)
+
+
 if __name__ == "__main__":
-    print("Scrapping initiated...")
+    logger.info("Scrapping initiated...")
     book_links = get_book_links()
-    print("Books link fetched...")
+    logger.info("Books link fetched...")
     books = get_books(book_links)
-    print("Books details fetched...")
-    db_books_list = get_books_db()
-    new_books = find_new_books(db_books_list)
-    new_books.extend(db_books_list['books'])
-    
-    # data = json.dumps(({'books' : new_books}), ensure_ascii=False).encode('utf-8')
-    # js = open("data_new.json", "a")
-    # js.write(data.decode())
-    print("Done")
+    if books:
+        logger.info("Books details fetched...")
+        db_books_list = get_books_db()
+        new_books = find_new_books(db_books_list)
+        new_books.extend(db_books_list['books'])
+        data = json.dumps({"books": new_books}, indent=4,
+                          sort_keys=True, ensure_ascii=False)
+        update_github(str(data), "booksdb.json")
+    else:
+        logger.info("New books not found...")
+
+    logger.info("Done")
