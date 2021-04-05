@@ -109,7 +109,7 @@ if __name__ == "__main__":
     new_books = find_new_books(db_books_list)
     new_books.extend(db_books_list['books'])
     
-    data = json.dumps(({'books' : new_books}), ensure_ascii=False).encode('utf-8')
-    js = open("data_new.json", "a")
-    js.write(data.decode())
+    # data = json.dumps(({'books' : new_books}), ensure_ascii=False).encode('utf-8')
+    # js = open("data_new.json", "a")
+    # js.write(data.decode())
     print("Done")
